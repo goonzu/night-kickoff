@@ -144,9 +144,10 @@ body.touch.playing #tc{display:grid}
     <kbd>E</kbd><span>달리기 (공격·수비 공통, 스태미나 소모)</span>
     <span class="kgroup">공격 (공을 가졌을 때)</span>
     <kbd>S</kbd><span>패스</span>
-    <kbd>W</kbd><span>스루패스 (침투하는 동료 앞으로)</span>
-    <kbd>A</kbd><span>롱패스 (띄워서 멀리)</span>
-    <kbd>D</kbd><span>슛 (꾹 누를수록 강하게)</span>
+    <kbd>W</kbd><span>스루패스 (꾹 누를수록 동료 앞 더 먼 공간으로)</span>
+    <kbd>A</kbd><span>크로스·롱패스 (꾹 누를수록 멀리, 동료 쪽으로 보정)</span>
+    <kbd>D</kbd><span>슛 (꾹 누를수록 강하게 · ↑/↓와 함께 차면 골대 위/아래 구석)</span>
+    <kbd>Z + D</kbd><span>감아차기 (Z를 누른 채 D로 차기)</span>
     <span class="kgroup">수비 (공이 없을 때)</span>
     <kbd>S</kbd><span>선수 바꾸기</span>
     <kbd>D</kbd><span>압박 수비 (누르고 있으면 공 쪽으로 붙어요)</span>
@@ -154,7 +155,7 @@ body.touch.playing #tc{display:grid}
     <kbd>Space</kbd><span>짧은 태클</span>
     <kbd>Esc</kbd><span>일시정지</span>
   </div>
-  <p class="touch-note">왼쪽 화면을 끌어 이동해요. 오른쪽 버튼은 공을 가졌을 때 패스·스루·롱패스·슛으로, 수비할 때 전환·압박·슬라이딩·태클로 바뀌어요. 슛은 길게 누를수록 강해져요. 화면은 가로로 돌려 주세요.</p>
+  <p class="touch-note">왼쪽 화면을 끌어 이동해요. 오른쪽 버튼은 공을 가졌을 때 패스·스루·크로스·슛·감아차기로, 수비할 때 전환·압박·슬라이딩·태클로 바뀌어요. 슛은 길게 누를수록 강해져요. 화면은 가로로 돌려 주세요.</p>
 </section>
 
 <section id="pause" class="panel" hidden aria-label="일시정지">
@@ -175,12 +176,12 @@ body.touch.playing #tc{display:grid}
 </section>
 
 <div id="tc">
-  <button type="button" data-k="KeyA">롱패스</button>
-  <button type="button" data-k="KeyW">스루</button>
-  <button type="button" class="shoot" data-k="KeyD">슛</button>
-  <button type="button" data-k="KeyE">질주</button>
-  <button type="button" data-k="KeyS">패스</button>
-  <button type="button" data-k="Space">태클</button>
+  <button type="button" data-slot="a" data-k="KeyA">크로스</button>
+  <button type="button" data-slot="w" data-k="KeyW">스루</button>
+  <button type="button" class="shoot" data-slot="d" data-k="KeyD">슛</button>
+  <button type="button" data-slot="e" data-k="KeyE">질주</button>
+  <button type="button" data-slot="s" data-k="KeyS">패스</button>
+  <button type="button" data-slot="sp" data-k="KeyZ+KeyD">감아차기</button>
 </div>
 <div id="rotate"><b>가로로 돌려 주세요</b><span style="color:var(--muted)">경기장은 가로 화면에서 보여요</span></div>
 
@@ -240,7 +241,7 @@ const G = {
   charging: false, charge: 0, idle: 0, firstKick: null, nextKick: null, celebrator: null, celebSpot: null,
   hype: 0, trail: [], flashes: [], settings: null,
 };
-const ball = { x: PW / 2, y: PH / 2, z: 0, vx: 0, vy: 0, vz: 0, owner: null, lastTouch: null, passTarget: null, shot: null, pending: null, gkTried: null, rot: 0, dir: 0 };
+const ball = { x: PW / 2, y: PH / 2, z: 0, vx: 0, vy: 0, vz: 0, owner: null, lastTouch: null, passTarget: null, shot: null, pending: null, gkTried: null, rot: 0, dir: 0, spin: 0, curl: false };
 const cam = { x: PW / 2, y: PH / 2 };
 
 const other = t => t === G.teams[0] ? G.teams[1] : G.teams[0];
@@ -274,7 +275,7 @@ function setupMatch(homeIdx, awayIdx, user, diffKey, duration) {
   G.teams = [t0, t1];
   G.players = t0.players.concat(t1.players);
   G.clock = 0; G.half = 1; G.duration = duration; G.paused = false; G.slowmo = 0; G.trail = [];
-  G.ctrl = null; G.charging = false; G.firstKick = t0; G.hype = 0;
+  G.ctrl = null; G.chg = null; G.firstKick = t0; G.hype = 0;
   ball.lastTouch = null;
   startKickoff(t0);
   cam.x = PW / 2; cam.y = PH / 2;
@@ -349,7 +350,7 @@ function setMuted(m) {
 // arrows move; letters are context actions (attack: S pass, W through, A long, D shoot, E sprint /
 // defence: S switch, D press, A slide tackle, Space standing tackle, E sprint)
 const keys = {}, edges = new Set();
-const GAME_KEYS = ['KeyE', 'KeyD', 'KeyS', 'KeyW', 'KeyA', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+const GAME_KEYS = ['KeyE', 'KeyD', 'KeyS', 'KeyW', 'KeyA', 'KeyZ', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
 const take = c => edges.has(c) ? (edges.delete(c), true) : false;
 const held = c => !!keys[c];
 const shootDown = () => held('KeyD');
@@ -383,10 +384,15 @@ cv.addEventListener('pointerdown', e => {
 cv.addEventListener('pointermove', e => { if (e.pointerId === joy.id) { joy.x = e.clientX; joy.y = e.clientY; } });
 const endJoy = e => { if (e.pointerId === joy.id) joy.id = null; };
 cv.addEventListener('pointerup', endJoy); cv.addEventListener('pointercancel', endJoy);
+// each touch button presses one or more keys ("KeyZ+KeyD" = curler); the mapping changes with attack/defence
 for (const b of document.querySelectorAll('#tc button')) {
-  const k = b.dataset.k;
-  b.addEventListener('pointerdown', e => { e.preventDefault(); audioInit(); keys[k] = true; edges.add(k); b.classList.add('on'); b.setPointerCapture(e.pointerId); });
-  const up = () => { keys[k] = false; b.classList.remove('on'); };
+  b.addEventListener('pointerdown', e => {
+    e.preventDefault(); audioInit();
+    const codes = (b.dataset.k || '').split('+').filter(Boolean); b._codes = codes;
+    for (const k of codes) { keys[k] = true; edges.add(k); }
+    b.classList.add('on'); b.setPointerCapture(e.pointerId);
+  });
+  const up = () => { for (const k of b._codes || []) keys[k] = false; b._codes = []; b.classList.remove('on'); };
   b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('lostpointercapture', up);
 }
 
@@ -395,20 +401,28 @@ function kickBall(p, vx, vy, vz, info) {
   info = info || {};
   ball.owner = null; ball.vx = vx; ball.vy = vy; ball.vz = vz; if (vz > 0) ball.z = Math.max(ball.z, 0.6);
   ball.lastTouch = p; ball.passTarget = info.target || null; ball.shot = info.shot ? { team: p.team, by: p } : null;
-  ball.pending = info.target ? { team: p.team } : null; ball.gkTried = null;
+  ball.pending = info.target ? { team: p.team } : null; ball.gkTried = null; ball.spin = 0; ball.curl = false; ball.runSpot = null;
   p.kickCd = 0.3; p.touchCd = 0.3; p.lunge = 0.15;
   sKick(Math.min(1, Math.hypot(vx, vy) / 1200));
 }
-function groundTo(p, tx, ty, target, err, pace) {
+// ground ball that rolls out to (tx,ty) and still has `arrive` px/s left when it gets there
+function groundTo(p, tx, ty, target, err, arrive) {
   const dx = tx - ball.x, dy = ty - ball.y, d = Math.hypot(dx, dy) || 1;
-  const v = Math.min(1150, (240 + 1.3 * d) * (pace || 1)), a = Math.atan2(dy, dx) + gauss() * err;
+  const v = Math.min(1150, (arrive || 240) + 1.3 * d), a = Math.atan2(dy, dx) + gauss() * err;
   kickBall(p, Math.cos(a) * v, Math.sin(a) * v, 0, { target });
 }
-function lobTo(p, tx, ty, target, err) {
-  const dx = tx - ball.x, dy = ty - ball.y, d = Math.hypot(dx, dy) || 1;
-  const vz = clamp(200 + d * 0.32, 240, 480), T = 2 * vz / GRAV, air = (1 - Math.exp(-0.25 * T)) / 0.25;
-  const v = Math.min(1100, 0.72 * d / air), a = Math.atan2(dy, dx) + gauss() * err;
+function flightTime(d, power) { return clamp(0.5 + d / 1500, 0.55, 1.25) * (1.1 - 0.25 * power); }
+// lofted ball that reaches (tx,ty) after T seconds at height h (h≈36 meets a head, 0 drops at the feet)
+function flightTo(p, tx, ty, T, h, target, err) {
+  const dx = tx - ball.x, dy = ty - ball.y, d = Math.hypot(dx, dy) || 1, k = 0.25;
+  const v = d * k / (1 - Math.exp(-k * T)), vz = (h + GRAV * T * T / 2) / T, a = Math.atan2(dy, dx) + gauss() * err;
   kickBall(p, Math.cos(a) * v, Math.sin(a) * v, vz, { target });
+  // the receiver waits where the ball comes down instead of running under it
+  if (target) ball.runSpot = { x: tx, y: ty };
+}
+function lobTo(p, tx, ty, target, err) {
+  const d = Math.hypot(tx - ball.x, ty - ball.y);
+  flightTo(p, tx, ty, flightTime(d, 0.5), inBox(other(p.team), tx, ty) ? 36 : 0, target, err);
 }
 function passTo(p, m, lob, through) {
   let tx = m.x + m.vx * 0.45, ty = m.y + m.vy * 0.45;
@@ -427,11 +441,11 @@ function shootDir(p, a, power, errMul) {
 function gainBall(p) {
   const prevTeam = ball.lastTouch ? ball.lastTouch.team : null;
   if (ball.pending && ball.pending.team === p.team) p.team.stats.passOk++;
-  ball.pending = null; ball.owner = p; ball.lastTouch = p; ball.passTarget = null; ball.shot = null; ball.gkTried = null; ball.z = 0; ball.vz = 0;
+  ball.pending = null; ball.owner = p; ball.lastTouch = p; ball.passTarget = null; ball.shot = null; ball.gkTried = null; ball.z = 0; ball.vz = 0; ball.spin = 0;
   p.ai.t = Math.min(p.ai.t, 0.15);
   if (p.role === 'GK') p.gkHold = 0.8;
   if (p.team.isUser) { if (p.role !== 'GK') G.ctrl = p; }
-  else if (G.user && prevTeam !== p.team) { G.ctrl = nearestUser(null) || G.ctrl; G.charging = false; }
+  else if (G.user && prevTeam !== p.team) { G.ctrl = nearestUser(null) || G.ctrl; G.chg = null; }
 }
 function tryTackle(p, chanceOverride) {
   const c = ball.owner;
@@ -450,7 +464,7 @@ function tryTackle(p, chanceOverride) {
     if (Math.random() < 0.5) { gainBall(p); }
     else {
       const ka = a + rnd(-0.7, 0.7), v = rnd(160, 260);
-      ball.owner = null; ball.vx = Math.cos(ka) * v; ball.vy = Math.sin(ka) * v; ball.vz = rnd(0, 60);
+      ball.owner = null; ball.vx = Math.cos(ka) * v; ball.vy = Math.sin(ka) * v; ball.vz = rnd(0, 60); ball.spin = 0;
       ball.lastTouch = p; ball.passTarget = null; ball.shot = null; ball.pending = null; p.touchCd = 0.25; c.touchCd = 0.4;
       sKick(0.25);
     }
@@ -484,41 +498,96 @@ function updateUserCtrl(dt) {
     if (n && n !== G.ctrl && G.idle > 0.35 && dist(n, ball) + 140 < dist(G.ctrl, ball)) G.ctrl = n;
   }
 }
+// D (shot), W (through ball) and A (cross / long ball) are held to set power and fire on release
+const CHARGE_KEYS = ['KeyD', 'KeyW', 'KeyA'];
 function chargeTick(dt) {
-  if (!G.charging) { if (take('KeyD')) { G.charging = true; G.charge = 0; } return false; }
-  if (shootDown()) { G.charge = Math.min(1, G.charge + dt / 0.85); return false; }
-  G.charging = false; return true;
+  if (!G.chg) {
+    for (const k of CHARGE_KEYS) if (take(k)) { G.chg = { key: k, p: 0, curl: held('KeyZ') }; break; }
+    return null;
+  }
+  if (held('KeyZ')) G.chg.curl = true;
+  if (held(G.chg.key)) { G.chg.p = Math.min(1, G.chg.p + dt / 0.85); return null; }
+  const r = G.chg; G.chg = null; return r;
 }
-// mode: 'short' (S) ground pass, 'through' (W) ground ball into the receiver's run, 'long' (A) lofted long ball
-function userPass(p, mode, isThrow) {
-  const dir = p.aim, t = p.team, long = mode === 'long';
+function fireCharge(p, r, isThrow) {
+  if (r.key === 'KeyD') { if (isThrow) userCross(p, r.p, true); else userShoot(p, r.p, r.curl); }
+  else if (r.key === 'KeyW') userThrough(p, r.p, isThrow);
+  else userCross(p, r.p, isThrow);
+}
+// S: short ground pass to the teammate nearest the aim direction
+function userPass(p, isThrow) {
+  const dir = p.aim, t = p.team;
   let best = null, bs = 1e9;
   for (const m of t.players) {
     if (m === p) continue;
     const a = Math.abs(angDiff(dir, Math.atan2(m.y - p.y, m.x - p.x))), d = dist(p, m);
-    if (a > (long ? 0.6 : 0.75) || d < 40 || d > (long ? 1300 : 950)) continue;
-    if (mode === 'through' && progress(t, m.x) < progress(t, p.x) - 0.02) continue;
-    let s = a * 1.1 + (m.role === 'GK' ? 0.5 : 0);
-    s += long ? (d < 250 ? 0.6 : -d / 2000) : d / 900;
+    if (a > 0.75 || d < 40 || d > 950) continue;
+    const s = a * 1.1 + d / 900 + (m.role === 'GK' ? 0.5 : 0);
     if (s < bs) { bs = s; best = m; }
   }
   if (best) {
     t.stats.passes++;
-    let tx = best.x + best.vx * 0.45, ty = best.y + best.vy * 0.45;
-    if (mode === 'through') {
-      const run = Math.hypot(best.vx, best.vy) > 40 ? Math.atan2(best.vy, best.vx) : (t.dir > 0 ? 0 : Math.PI);
-      tx += Math.cos(run) * 120 + t.dir * 30; ty += Math.sin(run) * 120;
-    }
-    tx = clamp(tx, 12, PW - 12); ty = clamp(ty, 12, PH - 12);
-    if (long) lobTo(p, tx, ty, best, 0.025); else groundTo(p, tx, ty, best, 0.02, mode === 'through' ? 1.1 : 1);
+    groundTo(p, clamp(best.x + best.vx * 0.45, 12, PW - 12), clamp(best.y + best.vy * 0.45, 12, PH - 12), best, 0.02);
+  } else groundTo(p, p.x + Math.cos(dir) * 300, p.y + Math.sin(dir) * 300, null, 0.02);
+  if (isThrow) ball.vz = Math.max(ball.vz, 120);
+}
+// space in front of a teammate, toward the goal; more power = further ahead
+function throughSpot(m, lead) {
+  const t = m.team, gx = oppGoalX(t), gy = lerp(m.y, PH / 2, 0.35);
+  const dx = gx - m.x, dy = gy - m.y, l = Math.hypot(dx, dy) || 1, L = Math.min(lead, l - 30);
+  return { x: clamp(m.x + dx / l * L, 20, PW - 20), y: clamp(m.y + dy / l * L, 20, PH - 20) };
+}
+// W: ground ball into the space ahead of a teammate so he runs onto it
+function userThrough(p, power, isThrow) {
+  const dir = p.aim, t = p.team, lead = 70 + power * 230;
+  let best = null, spot = null, bs = 1e9;
+  for (const m of t.players) {
+    if (m === p || m.role === 'GK') continue;
+    const s0 = throughSpot(m, lead), d = Math.hypot(s0.x - p.x, s0.y - p.y);
+    const a = Math.abs(angDiff(dir, Math.atan2(s0.y - p.y, s0.x - p.x)));
+    if (a > 0.85 || d < 60 || d > 1050) continue;
+    const s = a * 1.2 + d / 1500 - (progress(t, m.x) - progress(t, p.x)) * 0.8;
+    if (s < bs) { bs = s; best = m; spot = s0; }
+  }
+  if (best) {
+    t.stats.passes++;
+    groundTo(p, spot.x, spot.y, best, 0.02, 130);
+    ball.runSpot = spot;
   } else {
-    const L = long ? 520 : mode === 'through' ? 380 : 300, tx = p.x + Math.cos(dir) * L, ty = p.y + Math.sin(dir) * L;
-    if (long) lobTo(p, tx, ty, null, 0.03); else groundTo(p, tx, ty, null, 0.02);
+    const L = 220 + power * 300;
+    groundTo(p, p.x + Math.cos(dir) * L, p.y + Math.sin(dir) * L, null, 0.02, 130);
   }
   if (isThrow) ball.vz = Math.max(ball.vz, 120);
 }
+// A: lofted cross / long ball. Power sets the intended length; it then bends toward the teammate who fits best,
+// arriving at head height inside the opponent's box and at the feet elsewhere.
+function userCross(p, power, isThrow) {
+  const dir = p.aim, t = p.team, want = 220 + power * 780;
+  let best = null, bs = 1e9;
+  for (const m of t.players) {
+    if (m === p || m.role === 'GK') continue;
+    const d = dist(p, m); if (d < 120) continue;
+    const a = Math.abs(angDiff(dir, Math.atan2(m.y - p.y, m.x - p.x)));
+    if (a > 1.0) continue;
+    const s = a + Math.abs(d - want) / 700 - (inBox(other(t), m.x, m.y) ? 0.15 : 0);
+    if (s < bs) { bs = s; best = m; }
+  }
+  let tx, ty;
+  if (best) {
+    t.stats.passes++;
+    // lead the runner, but never by more than a couple of strides
+    const T0 = flightTime(dist(p, best), power), lx = best.vx * T0 * 0.8, ly = best.vy * T0 * 0.8, ll = Math.hypot(lx, ly), cap = ll > 90 ? 90 / ll : 1;
+    tx = best.x + lx * cap; ty = best.y + ly * cap;
+    // over- or under-hit a little when the power doesn't match the distance
+    const d0 = Math.hypot(tx - ball.x, ty - ball.y) || 1, miss = clamp((want - d0) / d0, -0.25, 0.25) * 0.5;
+    tx = ball.x + (tx - ball.x) * (1 + miss); ty = ball.y + (ty - ball.y) * (1 + miss);
+  } else { tx = p.x + Math.cos(dir) * want; ty = p.y + Math.sin(dir) * want; }
+  tx = clamp(tx, 10, PW - 10); ty = clamp(ty, 10, PH - 10);
+  const d = Math.hypot(tx - ball.x, ty - ball.y);
+  flightTo(p, tx, ty, flightTime(d, power), inBox(other(t), tx, ty) ? 36 : 0, best, 0.025);
+}
 function knockBall(p, a, v) {
-  Object.assign(ball, { owner: null, vx: Math.cos(a) * v, vy: Math.sin(a) * v, vz: rnd(0, 50), passTarget: null, shot: null, pending: null, gkTried: null });
+  Object.assign(ball, { owner: null, vx: Math.cos(a) * v, vy: Math.sin(a) * v, vz: rnd(0, 50), passTarget: null, shot: null, pending: null, gkTried: null, spin: 0 });
   ball.lastTouch = p; sKick(0.3);
 }
 // A on defence: a long sliding tackle that covers ground but leaves the player on the floor afterwards
@@ -539,6 +608,15 @@ function slideCheck(p) {
   if (!c) { knockBall(p, a, rnd(240, 340)); return; }
   if (Math.random() < 0.75) { c.stun = 0.6; knockBall(p, a, rnd(220, 320)); c.touchCd = 0.4; }
 }
+// a through ball's receiver sprints into the space it was played into, then meets the ball
+function receiveTarget(p) {
+  const s = ball.runSpot;
+  if (s && ball.passTarget === p) {
+    if (ball.z > 10 || ball.vz > 0) return s; // lofted: hold the landing spot until it drops
+    if (Math.hypot(p.x - s.x, p.y - s.y) > 18 && Math.hypot(ball.x - p.x, ball.y - p.y) > 70) return s;
+  }
+  return interceptPoint(p, RUN);
+}
 // D on defence: run at the ball carrier from the goal side (or at the loose ball)
 function pressTarget(p) {
   const o = ball.owner;
@@ -548,18 +626,41 @@ function pressTarget(p) {
   }
   return interceptPoint(p, RUN);
 }
-function userShoot(p, power) {
+// D: shots always go at the goal. ↑ aims at the top corner, ↓ at the bottom corner, no vertical key = toward the far post.
+function userShoot(p, power, curl) {
   power = Math.max(0.25, power);
-  const t = p.team, gx = oppGoalX(t), [ix, iy] = inputDir();
-  const gA = Math.atan2(PH / 2 - p.y, gx - p.x), dG = Math.hypot(gx - p.x, PH / 2 - p.y);
-  let a = p.aim;
-  if (Math.abs(angDiff(p.aim, gA)) < 0.75 && dG < 760) {
-    // aim assist: up/down picks a corner, otherwise far post
-    const side = Math.abs(iy) > 0.25 ? Math.sign(iy) : (p.y > PH / 2 ? -1 : 1);
-    const ay = PH / 2 + side * (GOAL_W / 2 - 18) * (Math.abs(iy) > 0.25 ? Math.min(1, Math.abs(iy) * 1.3) : 0.55);
-    a = Math.atan2(ay - ball.y, gx - ball.x);
+  const t = p.team, gx = oppGoalX(t), [, iy] = inputDir();
+  if (progress(t, p.x) < 0.42) { shootDir(p, p.aim, power, 1); return; } // from deep it's a clearance in the aim direction
+  const picked = Math.abs(iy) > 0.25, side = picked ? Math.sign(iy) : (p.y > PH / 2 ? -1 : 1);
+  if (curl) { curlShot(p, gx, PH / 2 + side * GOAL_W / 2 * 0.8, power); return; }
+  const ay = PH / 2 + side * GOAL_W / 2 * (picked ? 0.76 : 0.4);
+  shootDir(p, Math.atan2(ay - ball.y, gx - ball.x), power, 1);
+}
+// Z+D: curler. Starts outside the target line, away from the goal centre, and bends back in.
+// time for a kicked ball (speed v, lift vz) to cover distance d under this game's drag and bounces; null if it never does
+function travelTime(v, vz, d) {
+  let x = 0, z = 0.6, t = 0; const h = 1 / 120;
+  while (t < 2.5) {
+    vz -= GRAV * h; z += vz * h;
+    if (z <= 0) { z = 0; if (vz < -90) { vz = -vz * 0.42; v *= 0.62; } else vz = 0; }
+    v *= Math.exp(-(z > 0.5 ? 0.25 : 1.3) * h); x += v * h; t += h;
+    if (x >= d) return t;
+    if (v < 60) return null;
   }
-  shootDir(p, a, power, 1);
+  return null;
+}
+function curlShot(p, tx, ty, power) {
+  const d = Math.hypot(tx - ball.x, ty - ball.y), base = Math.atan2(ty - ball.y, tx - ball.x);
+  // make sure even a soft curler actually reaches the goal
+  let v = 600 + power * 560, vz = 90 + power * 120, T = travelTime(v, vz, d * 1.02);
+  while ((T === null || T > 1.4) && v < 1400) { v *= 1.1; T = travelTime(v, vz, d * 1.02); }
+  const theta = 0.24, out = Math.sign(ty - PH / 2) || 1;
+  const delta = out * Math.sin(base + theta) > out * Math.sin(base - theta) ? theta : -theta;
+  const a0 = base + delta + gauss() * (0.01 + power * power * 0.04);
+  p.team.stats.shots++;
+  kickBall(p, Math.cos(a0) * v, Math.sin(a0) * v, vz, { shot: true });
+  // spin = curvature (radians per px travelled): a circular arc from the launch heading back onto the target
+  ball.spin = -2 * Math.sin(delta) / d; ball.curl = true;
 }
 function userControl(p, dt) {
   const [ix, iy] = inputDir(), mag = Math.hypot(ix, iy);
@@ -568,22 +669,23 @@ function userControl(p, dt) {
   const pressing = !has && held('KeyD') && p.stun <= 0;
   const sprint = sprintDown() && p.stamina > 0.05 && (mag > 0.2 || pressing);
   const spd = (sprint ? SPRINT : RUN) * (has ? 0.93 : 1);
+  // a pass is on its way to me and I'm not steering: run onto it automatically
+  const autoRun = !has && !pressing && mag < 0.2 && ball.passTarget === p;
   if (p.stun > 0) { p.desVx = p.desVy = 0; }
-  else if (pressing) {
-    const q = pressTarget(p), dx = q.x - p.x, dy = q.y - p.y, d = Math.hypot(dx, dy) || 1, s = Math.min(spd, d * 4);
+  else if (pressing || autoRun) {
+    const q = pressing ? pressTarget(p) : receiveTarget(p);
+    const dx = q.x - p.x, dy = q.y - p.y, d = Math.hypot(dx, dy) || 1, s = Math.min(spd, d * 4);
     p.desVx = dx / d * s; p.desVy = dy / d * s;
   } else { p.desVx = ix * spd; p.desVy = iy * spd; }
   p.sprinting = sprint;
   p.aim = mag > 0.2 ? Math.atan2(iy, ix) : p.face;
   if (has) {
     if (p.stun > 0) return;
-    const rel = chargeTick(dt);
-    if (take('KeyS')) { G.charging = false; userPass(p, 'short'); }
-    else if (take('KeyW')) { G.charging = false; userPass(p, 'through'); }
-    else if (take('KeyA')) { G.charging = false; userPass(p, 'long'); }
-    else if (rel) userShoot(p, G.charge);
+    if (take('KeyS')) { G.chg = null; userPass(p, false); return; }
+    const r = chargeTick(dt);
+    if (r) fireCharge(p, r, false);
   } else {
-    G.charging = false;
+    G.chg = null;
     if (p.stun > 0) return;
     if (take('Space')) tryTackle(p);
     else if (take('KeyA')) startSlide(p);
@@ -637,6 +739,15 @@ function assignRoles(t) {
       for (const p of field) if (p !== ball.passTarget) p.roleNow = 'support';
       return;
     }
+    // a cross dropping into our box: nearest defender attacks the landing spot, the others pick up runners
+    const spot = ball.runSpot;
+    if (spot && ball.passTarget && ball.passTarget.team === opp && inBox(t, spot.x, spot.y)) {
+      const dS = q => Math.hypot(q.x - spot.x, q.y - spot.y);
+      const bySpot = cands.map(c => c.p).sort((a, b) => dS(a) - dS(b));
+      if (bySpot[0] && !(t.isUser && G.ctrl && dS(G.ctrl) < dS(bySpot[0]))) bySpot[0].roleNow = 'chase';
+      assignMarks(t, bySpot.filter(q => q.roleNow === 'shape'), null);
+      return;
+    }
     if (cands[0] && userClose > cands[0].d + 40) cands[0].p.roleNow = 'chase';
     const last = ball.lastTouch ? ball.lastTouch.team : null;
     for (const c of cands) if (c.p.roleNow === 'shape' && last === t) c.p.roleNow = 'support';
@@ -645,11 +756,14 @@ function assignRoles(t) {
   let i = 0;
   if (cands[i] && userClose > 160) cands[i++].p.roleNow = 'press';
   if (cands[i]) cands[i++].p.roleNow = 'cover';
-  const attackers = opp.players.filter(o => o.role !== 'GK' && o !== owner)
-    .sort((a, b) => Math.abs(a.x - ownGoalX(t)) - Math.abs(b.x - ownGoalX(t)));
+  assignMarks(t, cands.slice(i).map(c => c.p), owner);
+}
+// each defender picks up the nearest unmarked attacker in our half
+function assignMarks(t, defenders, owner) {
+  const attackers = other(t).players.filter(o => o.role !== 'GK' && o !== owner);
   const taken = new Set();
-  for (; i < cands.length; i++) {
-    const p = cands[i].p; let best = null, bd = 1e9;
+  for (const p of defenders) {
+    let best = null, bd = 1e9;
     for (const o of attackers) {
       if (taken.has(o) || Math.abs(o.x - ownGoalX(t)) > PW * 0.62) continue;
       const d = dist(p, o); if (d < bd) { bd = d; best = o; }
@@ -734,26 +848,48 @@ function closestToBall() {
 function aiGK(p, dt) {
   const t = p.team, gx = ownGoalX(t), s = t.dir;
   if (ball.owner === p) { aiCarrier(p, dt); return; }
-  if (G.state !== 'play' && G.state !== 'setpiece') { steerTo(p, gx + s * 24, PH / 2, 0.5, false, 1); return; }
-  let tx, ty, fast = false;
-  const bx = ball.x, by = ball.y;
-  if (!ball.owner && ball.vx * s < -150) {
-    const lineX = gx + s * 22, tt = (lineX - bx) / ball.vx;
-    if (tt > 0 && tt < 1.3) { tx = lineX; ty = clamp(by + ball.vy * tt, PH / 2 - GOAL_W / 2 - 20, PH / 2 + GOAL_W / 2 + 20); fast = true; }
-  }
-  if (tx === undefined) {
-    const dx = (bx - gx) * s, dy = by - PH / 2, dB = Math.hypot(dx, dy), ang = Math.atan2(dy, Math.max(dx, 1));
-    const r = 24 + clamp((520 - dB) * 0.12, 0, 60);
-    tx = gx + s * Math.cos(ang) * r; ty = PH / 2 + Math.sin(ang) * r * 0.9;
-    if (inBox(t, bx, by)) {
-      const looseMine = !ball.owner && Math.hypot(ball.vx, ball.vy) < 450 && closestToBall() === p;
-      const oneOnOne = ball.owner && ball.owner.team !== t && dist(ball.owner, p) < 140;
-      if (looseMine || oneOnOne) { tx = bx; ty = by; fast = true; }
+  const g = p.gk || (p.gk = { mode: 'set', t: 0, tx: gx + s * 30, ty: PH / 2 });
+  if (G.state !== 'play' && G.state !== 'setpiece') { g.mode = 'set'; g.tx = gx + s * 30; g.ty = PH / 2; steerTo(p, g.tx, g.ty, 0.5, false, 1); return; }
+  g.t -= dt;
+  const bx = ball.x, by = ball.y, spd = Math.hypot(ball.vx, ball.vy);
+  // 1) SAVE: only for a real shot (or a fast ball) that will cross the line near the frame
+  if (!ball.owner && ball.vx * s < -250 && (ball.shot || spd > 520)) {
+    const lineX = gx + s * 24, tt = (lineX - bx) / ball.vx, yc = by + ball.vy * tt;
+    if (tt > 0 && tt < 1.1 && Math.abs(yc - PH / 2) < GOAL_W / 2 + 40) {
+      g.mode = 'save'; g.t = 0.25; g.tx = lineX; g.ty = clamp(yc, PH / 2 - GOAL_W / 2 - 8, PH / 2 + GOAL_W / 2 + 8);
     }
+  }
+  if (g.mode === 'save' && g.t <= 0) g.mode = 'set';
+  // 2) RUSH: a loose ball in the box he gets to first, or a 1v1 close to goal. Committed for a moment to avoid dithering.
+  if (g.mode !== 'save') {
+    let rush = false;
+    if (!ball.owner && inBox(t, bx, by) && spd < 450 && ball.z < 40) {
+      const mine = dist(p, ball) / (RUN * 1.1);
+      let opp = 1e9, mate = 1e9;
+      for (const q of G.players) { if (q === p) continue; const tq = dist(q, ball) / RUN; if (q.team === t) mate = Math.min(mate, tq); else opp = Math.min(opp, tq); }
+      rush = mine < opp - 0.05 && mine < mate + 0.3;
+    }
+    if (ball.owner && ball.owner.team !== t && inBox(t, bx, by) && Math.abs(bx - gx) < 210 && dist(ball.owner, p) < 150) rush = true;
+    if (rush) { g.mode = 'rush'; g.t = 0.4; } else if (g.mode === 'rush' && g.t <= 0) g.mode = 'set';
+  }
+  let tx, ty, f = 0.65, fast = false;
+  if (g.mode === 'save') { tx = g.tx; ty = g.ty; f = 1; fast = true; }
+  else if (g.mode === 'rush') { tx = bx; ty = by; f = 1; fast = true; g.tx = p.x; g.ty = p.y; }
+  else {
+    // 3) SET: stand on the line from the goal centre to the ball. Far ball = near the line,
+    // ball approaching = step out to narrow the angle. The target is smoothed so he doesn't twitch.
+    const dx = Math.max(1, (bx - gx) * s), dy = by - PH / 2, dB = Math.hypot(dx, dy);
+    const depth = dB > 700 ? 28 : dB < 160 ? 40 : lerp(68, 28, (dB - 160) / 540);
+    const k = Math.min(1, depth / dB);
+    const ttx = gx + s * dx * k, tty = clamp(PH / 2 + dy * k, PH / 2 - GOAL_W / 2 + 8, PH / 2 + GOAL_W / 2 - 8);
+    const a = 1 - Math.exp(-dt * 3);
+    g.tx += (ttx - g.tx) * a; g.ty += (tty - g.ty) * a;
+    tx = g.tx; ty = g.ty;
+    if (Math.hypot(tx - p.x, ty - p.y) < 5) { p.desVx = p.desVy = 0; p.sprinting = false; return; }
   }
   tx = clamp(tx, Math.min(gx, gx + s * BOX_D), Math.max(gx, gx + s * BOX_D));
   ty = clamp(ty, PH / 2 - BOX_H / 2, PH / 2 + BOX_H / 2);
-  steerTo(p, tx, ty, fast ? 1 : 0.7, fast, t.diff.speed * (fast ? 1.15 : 1));
+  steerTo(p, tx, ty, f, fast, t.diff.speed * (fast ? 1.15 : 1));
   if (ball.owner && ball.owner.team !== t && dist(p, ball) < 26 && p.tackleCd <= 0) tryTackle(p, 0.55 + t.diff.gk);
 }
 function setpieceTarget(p) {
@@ -791,7 +927,10 @@ function aiControl(p, dt) {
   switch (role) {
     case 'carrier': aiCarrier(p, dt); return;
     case 'chase': case 'receive': {
-      const q = interceptPoint(p, RUN * d.speed); tx = q.x; ty = q.y; f = 1; sprint = dist(p, q) > 90; break;
+      // against a lofted pass, attack the spot where it comes down rather than running under its flight
+      const aerial = role === 'chase' && ball.runSpot && (ball.z > 15 || ball.vz > 0);
+      const q = role === 'receive' ? receiveTarget(p) : aerial ? ball.runSpot : interceptPoint(p, RUN * d.speed);
+      tx = q.x; ty = q.y; f = 1; sprint = dist(p, q) > 90; break;
     }
     case 'press': {
       const o = ball.owner, g = { x: ownGoalX(t), y: PH / 2 };
@@ -833,7 +972,7 @@ function kickoffPositions(kickTeam) {
 }
 function startKickoff(team) { kickoffPositions(team); startSetpiece('kickoff', team, PW / 2, PH / 2); }
 function startSetpiece(kind, team, x, y) {
-  G.state = 'setpiece'; G.charging = false;
+  G.state = 'setpiece'; G.chg = null;
   let taker;
   if (kind === 'goalkick') taker = gkOf(team);
   else if (kind === 'kickoff') taker = team.players.find(p => p.role === 'FW');
@@ -843,7 +982,7 @@ function startSetpiece(kind, team, x, y) {
   else if (kind === 'corner') aim = Math.atan2(PH / 2 - y, (x < PW / 2 ? SPOT_D : PW - SPOT_D) - x);
   else aim = Math.atan2(PH / 2 - y, worldX(team, 0.6) - x);
   G.sp = { kind, team, x, y, t: 0, aim, taker, aiDelay: rnd(0.9, 1.4), whistled: false };
-  Object.assign(ball, { x, y, z: 0, vx: 0, vy: 0, vz: 0, owner: taker, passTarget: null, shot: null, pending: null, gkTried: null });
+  Object.assign(ball, { x, y, z: 0, vx: 0, vy: 0, vz: 0, owner: taker, passTarget: null, shot: null, pending: null, gkTried: null, spin: 0 });
   ball.lastTouch = taker;
   if (G.user) G.ctrl = team.isUser && taker.role !== 'GK' ? taker : nearestUser(null);
   G.trail = [];
@@ -876,13 +1015,12 @@ function setpieceTaker(p, dt) {
   Object.assign(ball, { x: sp.x, y: sp.y, z: 0, vx: 0, vy: 0, vz: 0 });
   if (sp.kind === 'kickoff' && sp.t > 0.4 && !sp.whistled) { sp.whistled = true; sWhistle(1); }
   if (userTake) {
-    if (sp.t < 0.5) { edges.clear(); G.charging = false; return; }
-    const rel = chargeTick(dt), thr = sp.kind === 'throw';
-    if (take('KeyS')) { G.charging = false; userPass(p, 'short', thr); endSetpiece(); }
-    else if (take('KeyW')) { G.charging = false; userPass(p, 'through', thr); endSetpiece(); }
-    else if (take('KeyA')) { G.charging = false; userPass(p, 'long', thr); endSetpiece(); }
-    else if (rel) { if (thr) userPass(p, 'long', true); else userShoot(p, G.charge); endSetpiece(); }
-    else if (sp.t > 10) aiSetpieceExecute(sp);
+    if (sp.t < 0.5) { edges.clear(); G.chg = null; return; }
+    const thr = sp.kind === 'throw';
+    if (take('KeyS')) { G.chg = null; userPass(p, thr); endSetpiece(); return; }
+    const r = chargeTick(dt);
+    if (r) { fireCharge(p, r, thr); endSetpiece(); }
+    else if (sp.t > 10 && !G.chg) aiSetpieceExecute(sp);
   } else if (sp.t > sp.aiDelay) aiSetpieceExecute(sp);
 }
 function enforceSetpieceSpace() {
@@ -911,7 +1049,10 @@ function movePlayer(p, dt) {
   else { const a = 1 - Math.exp(-dt * 9); p.vx += (p.desVx - p.vx) * a; p.vy += (p.desVy - p.vy) * a; }
   p.x += p.vx * dt; p.y += p.vy * dt;
   const sp = Math.hypot(p.vx, p.vy);
-  if (sp > 20 && !(p.slide > 0) && !(G.state === 'setpiece' && G.sp && G.sp.taker === p)) {
+  if (p.role === 'GK' && ball.owner !== p && G.state === 'play') {
+    // keepers keep their eyes on the ball, even while shuffling sideways
+    p.face += angDiff(p.face, Math.atan2(ball.y - p.y, ball.x - p.x)) * Math.min(1, dt * 8);
+  } else if (sp > 20 && !(p.slide > 0) && !(G.state === 'setpiece' && G.sp && G.sp.taker === p)) {
     p.face += angDiff(p.face, Math.atan2(p.vy, p.vx)) * Math.min(1, dt * (ball.owner === p ? 10 : 14));
   }
   p.anim += sp * dt * 0.09;
@@ -931,7 +1072,7 @@ function ballFrame(prevX) {
     const dx = ball.x - px, dy = ball.y - py, d = Math.hypot(dx, dy), R = BALL_R + POST_R;
     if (d < R && d > 0) {
       const nx = dx / d, ny = dy / d, vn = ball.vx * nx + ball.vy * ny;
-      if (vn < 0) { ball.vx -= 1.6 * vn * nx; ball.vy -= 1.6 * vn * ny; if (-vn > 200) { sPost(); G.hype = Math.max(G.hype, 0.4); } }
+      if (vn < 0) { ball.vx -= 1.6 * vn * nx; ball.vy -= 1.6 * vn * ny; ball.spin = 0; if (-vn > 200) { sPost(); G.hype = Math.max(G.hype, 0.4); } }
       ball.x = px + nx * R; ball.y = py + ny * R;
     }
   }
@@ -939,14 +1080,14 @@ function ballFrame(prevX) {
   const inMouthY = Math.abs(ball.y - PH / 2) < GOAL_W / 2;
   if (inMouthY && ball.z >= BAR_H - 4 && ball.z < BAR_H + 10) {
     if ((prevX >= 0 && ball.x < 0) || (prevX <= PW && ball.x > PW)) {
-      ball.x = prevX; ball.vx = -ball.vx * 0.5; ball.vz = Math.abs(ball.vz) * 0.3 + 40; sPost(); G.hype = Math.max(G.hype, 0.45);
+      ball.x = prevX; ball.vx = -ball.vx * 0.5; ball.spin = 0; ball.vz = Math.abs(ball.vz) * 0.3 + 40; sPost(); G.hype = Math.max(G.hype, 0.45);
     }
   }
 }
 function netConfine() {
   if (ball.x > 0 && ball.x < PW) return;
   const left = ball.x <= 0, back = left ? -GOAL_D + BALL_R : PW + GOAL_D - BALL_R;
-  if (left ? ball.x < back : ball.x > back) { ball.x = back; ball.vx = -ball.vx * 0.15; }
+  if (left ? ball.x < back : ball.x > back) { ball.x = back; ball.vx = -ball.vx * 0.15; ball.spin = 0; }
   const lim = GOAL_W / 2 - BALL_R;
   if (Math.abs(ball.y - PH / 2) > lim) { ball.y = PH / 2 + Math.sign(ball.y - PH / 2) * lim; ball.vy = -ball.vy * 0.2; }
   if (ball.z > BAR_H - BALL_R) { ball.z = BAR_H - BALL_R; ball.vz = -Math.abs(ball.vz) * 0.2; }
@@ -965,7 +1106,7 @@ function gkSaves() {
     gk.dive = 0.45;
     if (sp < 760 && ball.z < 55) { gainBall(gk); gk.gkHold = 0.9; }
     else {
-      ball.vx = -ball.vx * 0.3 + t.dir * 120; ball.vy = ball.vy * 0.4 + (Math.random() < 0.5 ? -1 : 1) * rnd(180, 320); ball.vz = rnd(60, 160);
+      ball.vx = -ball.vx * 0.3 + t.dir * 120; ball.vy = ball.vy * 0.4 + (Math.random() < 0.5 ? -1 : 1) * rnd(180, 320); ball.vz = rnd(60, 160); ball.spin = 0;
       ball.lastTouch = gk; ball.shot = null; ball.passTarget = null; ball.pending = null; gk.kickCd = 0.4; sKick(0.4);
       G.hype = Math.max(G.hype, 0.5);
     }
@@ -986,15 +1127,26 @@ function pickups() {
   if (Math.random() < ch) gainBall(p);
   else {
     const a = Math.atan2(ball.vy, ball.vx) + rnd(-0.9, 0.9), v = sp * rnd(0.3, 0.55);
-    ball.vx = Math.cos(a) * v; ball.vy = Math.sin(a) * v; ball.vz = rnd(0, 90);
+    ball.vx = Math.cos(a) * v; ball.vy = Math.sin(a) * v; ball.vz = rnd(0, 90); ball.spin = 0;
     ball.lastTouch = p; ball.passTarget = null; ball.shot = null; ball.pending = null; p.touchCd = 0.35; sKick(0.25);
   }
 }
 function headers() {
-  if (ball.z <= 22 || ball.z > 58) return;
-  for (const p of G.players) {
-    if (p.role === 'GK' || p.stun > 0 || p.touchCd > 0 || p.kickCd > 0) continue;
-    if (Math.hypot(p.x - ball.x, p.y - ball.y) > PLAYER_R + BALL_R + 3) continue;
+  if (ball.z <= 22 || ball.z > 64) return;
+  // aerial duel: everyone within jumping reach contests it; the better-placed player usually wins,
+  // and defenders in their own box get a slight edge
+  // (the duel starts once someone can reach it; anyone close enough to jump with them joins in)
+  let p = null, bestScore = 1e9, reachable = false;
+  for (const q of G.players) {
+    if (q.role === 'GK' || q.stun > 0 || q.touchCd > 0 || q.kickCd > 0) continue;
+    const d = Math.hypot(q.x - ball.x, q.y - ball.y);
+    if (d > PLAYER_R + BALL_R + 26) continue;
+    if (d <= PLAYER_R + BALL_R + 6) reachable = true;
+    // two players shoulder to shoulder (bodies can't overlap) count as equally placed
+    const score = (Math.max(0, d - PLAYER_R * 2) + 18) * rnd(0.55, 1.45) * (inBox(q.team, ball.x, ball.y) ? 0.9 : 1);
+    if (score < bestScore) { bestScore = score; p = q; }
+  }
+  if (p && reachable) {
     const t = p.team, gx = oppGoalX(t);
     if (inBox(other(t), ball.x, ball.y)) {
       const ay = PH / 2 + rnd(-GOAL_W / 2 + 12, GOAL_W / 2 - 12), a = Math.atan2(ay - ball.y, gx - ball.x) + gauss() * 0.12;
@@ -1019,6 +1171,12 @@ function updateBall(dt) {
     return;
   }
   const prevX = ball.x;
+  if (ball.spin) {
+    // curl: turn the velocity in proportion to the distance covered this step
+    const s = ball.spin * Math.hypot(ball.vx, ball.vy) * dt, c = Math.cos(s), n = Math.sin(s), vx = ball.vx;
+    ball.vx = vx * c - ball.vy * n; ball.vy = vx * n + ball.vy * c;
+    if (Math.hypot(ball.vx, ball.vy) < 120) ball.spin = 0;
+  }
   ball.x += ball.vx * dt; ball.y += ball.vy * dt;
   if (ball.z > 0 || ball.vz > 0) {
     ball.vz -= GRAV * dt; ball.z += ball.vz * dt;
@@ -1057,7 +1215,7 @@ function goalScored(left) {
   G.state = 'goal'; G.stateT = 3.6; G.slowmo = 1.1; G.hype = 1;
   G.celebrator = own ? null : lt; G.nextKick = other(scoring);
   if (G.celebrator) G.celebSpot = { x: oppGoalX(scoring) - scoring.dir * 40, y: G.celebrator.y < PH / 2 ? 40 : PH - 40 };
-  ball.owner = null; ball.passTarget = null; G.charging = false;
+  ball.owner = null; ball.passTarget = null; G.chg = null;
   if (G.user) {
     sNet(); sWhistle(1);
     const sub = own ? `${lt.name} 자책골 · ${minute}'` : lt ? `${lt.num} ${lt.name} · ${minute}'` : `${minute}'`;
@@ -1237,7 +1395,7 @@ function drawBall() {
     ctx.lineCap = 'round';
     for (let i = 1; i < G.trail.length; i++) {
       const a = G.trail[i - 1], b = G.trail[i];
-      ctx.strokeStyle = `rgba(255,236,170,${Math.max(0, b.a) * 0.35})`; ctx.lineWidth = BALL_R * 1.6 * (i / G.trail.length);
+      ctx.strokeStyle = ball.curl ? `rgba(120,210,255,${Math.max(0, b.a) * 0.45})` : `rgba(255,236,170,${Math.max(0, b.a) * 0.35})`; ctx.lineWidth = BALL_R * 1.6 * (i / G.trail.length);
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
     }
     ctx.lineCap = 'butt';
@@ -1275,11 +1433,16 @@ function drawOverlays() {
     ctx.fillStyle = '#ffd35a'; ctx.beginPath(); ctx.moveTo(c.x - 6, ty - 6); ctx.lineTo(c.x + 6, ty - 6); ctx.lineTo(c.x, ty + 1); ctx.closePath(); ctx.fill();
     ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(c.x - 14, ty - 12, 28, 3);
     ctx.fillStyle = c.stamina > 0.3 ? '#9be37a' : '#ff5b4a'; ctx.fillRect(c.x - 14, ty - 12, 28 * c.stamina, 3);
-    if (G.charging && ball.owner === c) {
-      const bw = 44, bx = c.x - bw / 2, by = c.y + PLAYER_R + 12;
-      ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(bx - 2, by - 2, bw + 4, 9);
-      const grd = ctx.createLinearGradient(bx, 0, bx + bw, 0); grd.addColorStop(0, '#ffd35a'); grd.addColorStop(1, '#ff5b4a');
-      ctx.fillStyle = grd; ctx.fillRect(bx, by, bw * G.charge, 5);
+    if (G.chg && ball.owner === c) {
+      const k = G.chg.key, curl = k === 'KeyD' && (G.chg.curl || held('KeyZ'));
+      const label = k === 'KeyD' ? (curl ? '감아차기' : '슛') : k === 'KeyW' ? '스루패스' : '크로스';
+      const col = k === 'KeyD' ? '#ff5b4a' : k === 'KeyW' ? '#4fd1ff' : '#9be37a';
+      const bw = 48, bx = c.x - bw / 2, by = c.y + PLAYER_R + 14;
+      ctx.fillStyle = 'rgba(0,0,0,.65)'; ctx.fillRect(bx - 2, by - 2, bw + 4, 9);
+      const grd = ctx.createLinearGradient(bx, 0, bx + bw, 0); grd.addColorStop(0, '#ffd35a'); grd.addColorStop(1, col);
+      ctx.fillStyle = grd; ctx.fillRect(bx, by, bw * G.chg.p, 5);
+      ctx.font = '600 10px "IBM Plex Sans KR", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.fillStyle = '#eef2ea'; ctx.fillText(label, c.x, by + 9);
     }
     if (G.state === 'setpiece' && G.sp && G.sp.taker === c) {
       const a = G.sp.aim, L = 70, sx = G.sp.x, sy = G.sp.y;
@@ -1373,17 +1536,17 @@ function updateBug(force) {
   $('#hSc').textContent = h.score; $('#aSc').textContent = a.score; $('#clk').textContent = clk;
 }
 // touch buttons share the keyboard's context-dependent meaning
-const TOUCH_LABELS = {
-  attack: { KeyA: '롱패스', KeyW: '스루', KeyD: '슛', KeyE: '질주', KeyS: '패스', Space: '' },
-  defend: { KeyA: '슬라이딩', KeyW: '', KeyD: '압박', KeyE: '질주', KeyS: '전환', Space: '태클' },
+const TOUCH_MAP = {
+  attack: { a: ['크로스', 'KeyA'], w: ['스루', 'KeyW'], d: ['슛', 'KeyD'], e: ['질주', 'KeyE'], s: ['패스', 'KeyS'], sp: ['감아차기', 'KeyZ+KeyD'] },
+  defend: { a: ['슬라이딩', 'KeyA'], w: ['', ''], d: ['압박', 'KeyD'], e: ['질주', 'KeyE'], s: ['전환', 'KeyS'], sp: ['태클', 'Space'] },
 };
 let touchMode = '';
 function updateTouchLabels() {
   const mode = G.ctrl && ball.owner === G.ctrl ? 'attack' : 'defend';
   if (mode === touchMode) return; touchMode = mode;
   for (const b of document.querySelectorAll('#tc button')) {
-    const label = TOUCH_LABELS[mode][b.dataset.k];
-    b.textContent = label || '—'; b.classList.toggle('off', !label);
+    const [label, codes] = TOUCH_MAP[mode][b.dataset.slot];
+    b.textContent = label || '—'; b.dataset.k = codes; b.classList.toggle('off', !label);
   }
 }
 let toastTimer = 0;
@@ -1401,7 +1564,7 @@ function showBanner(color, sub) {
 function setPaused(v) {
   if (!G.user || G.over) return;
   G.paused = v; $('#pause').hidden = !v;
-  if (v) { G.charging = false; for (const k in keys) keys[k] = false; }
+  if (v) { G.chg = null; for (const k in keys) keys[k] = false; }
   crowdTick();
 }
 function togglePause() { setPaused(!G.paused); }
